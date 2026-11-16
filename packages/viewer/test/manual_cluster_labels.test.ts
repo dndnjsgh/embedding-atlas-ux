@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Apple Inc. Licensed under MIT License.
+// Licensed under the MIT License. See LICENSE in the project root.
 
 import { describe, expect, it } from "vitest";
 import { get } from "svelte/store";

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Apple Inc. Licensed under MIT License.
+// Licensed under the MIT License. See LICENSE in the project root.
 
 import type { RowID } from "../chart.js";
 import type { HighlightMode } from "../../stores/embedding_highlight_store.js";

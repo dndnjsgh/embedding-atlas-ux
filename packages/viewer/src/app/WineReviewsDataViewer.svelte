@@ -1,4 +1,4 @@
-<!-- Copyright (c) 2026 Apple Inc. Licensed under MIT License. -->
+<!-- Licensed under the MIT License. See LICENSE in the project root. -->
 <script lang="ts">
   import type { EmbeddingViewConfig } from "@embedding-atlas/component";
   import type { Coordinator, DuckDBWASMConnector } from "@uwdata/mosaic-core";
