@@ -1,133 +1,75 @@
-# Embedding Atlas
+# Embedding Atlas UX
 
-[![NPM Version](https://img.shields.io/npm/v/embedding-atlas)](https://www.npmjs.com/package/embedding-atlas)
-[![PyPI - Version](https://img.shields.io/pypi/v/embedding-atlas)](https://pypi.org/project/embedding-atlas/)
-[![Paper](https://img.shields.io/badge/paper-arXiv:2505.06386-b31b1b.svg)](https://arxiv.org/abs/2505.06386)
-![Build](https://github.com/apple/embedding-atlas/actions/workflows/ci.yml/badge.svg)
-[![GitHub License](https://img.shields.io/github/license/apple/embedding-atlas)](./LICENSE)
+Apple의 [Embedding Atlas](https://github.com/apple/embedding-atlas)를 바탕으로, 많은 데이터 점을 탐색할 때 **현재 위치를 파악하고, 검색 결과를 해석하고, 분석 결과를 직접 정리하기 쉽게** 개선한 프로젝트입니다.
 
-Embedding Atlas is a tool that provides interactive visualizations for large embeddings and their metadata. You can visualize, cross-filter, and search across your data.
+원본 프로젝트 전체 코드에 UX 개선을 반영한 별도 저장소입니다. Apple의 공식 배포판이 아니며, npm이나 pip에서 `embedding-atlas`를 설치하는 것만으로 이 저장소의 개선 기능이 적용되지는 않습니다.
 
-**For embeddings**
+## 무엇을 개선했나요?
 
-- 🏷️ **Automatic data clustering & labeling:**
-  Interactively visualize and navigate overall data structure.
+임베딩 지도는 데이터의 관계를 점의 위치로 보여줍니다. 이 프로젝트는 “처음에는 어디를 봐야 할까?”, “확대하다가 어디에 있는지 잊으면?”, “검색 결과를 왜 믿어야 할까?”라는 탐색 과정의 문제를 다룹니다.
 
-- 🫧 **Kernel density estimation & density contours:**
-  Easily explore and distinguish between dense regions of data and outliers.
+| 탐색 중 겪는 문제 | 추가·개선한 기능 |
+| --- | --- |
+| 처음 접하면 지도를 어떻게 탐색할지 막막함 | 단계별 카메라 이동과 설명을 제공하는 가이드 투어 |
+| 확대·이동 중 전체 분포에서의 위치를 잃음 | 전체 분포와 현재 화면 범위를 보여주는 미니맵 |
+| 검색 결과와 주변 데이터의 관계를 보기 어려움 | Focus·Context·Compare 하이라이트 |
+| 검색 결과가 나온 이유를 알기 어려움 | 일치 구간, 검색 방식, 점수와 근거 표시 |
+| 밀집된 점에서 툴팁이 쉽게 바뀜 | 확대 수준·밀도에 맞춘 호버 선택 반경과 유지 처리 |
+| 발견한 군집에 이름과 의미를 남기기 어려움 | 태그, 군집 편집, 지도 이름표, JSON·CSV 내보내기 |
 
-- 🧊 **Order-independent transparency:**
-  Ensure clear, accurate rendering of overlapping points.
+검색·표·차트가 연결된 전체 대시보드는 원본 Viewer를 재사용합니다. 이 저장소에서는 그 화면에 위 기능들을 연결하고 Wine Reviews 데모를 추가했습니다.
 
-- 🔍 **Real-time search & nearest neighbors:**
-  Find similar data to a given query or existing data point.
+## 문서 읽는 순서
 
-- 🚀 **Smooth performance at scale:**
-  Up to a few million points, powered by WebGPU.
+1. [개선 기능 전체 설명](packages/docs/ux-improvements.md): 기능의 목적과 구현 위치
+2. [검색 하이라이트 사용법](packages/docs/highlight-modes.md): 세 모드의 차이와 비교 예시
+3. [검색 결과 읽는 법](packages/docs/search-evidence.md): 일치 유형, 점수, 신뢰도와 한계
+4. [호버·수동 분석 사용법](packages/docs/manual-analysis.md): 군집 편집과 결과 내보내기
 
-**For any tabular data**
+원본 기능 소개·논문 인용은 [원본 README](README.upstream.md), 전체 빌드 절차는 [개발 문서](packages/docs/develop.md)를 참고하세요.
 
-- 📊 **Linked dashboards & cross-filtering:**
-  Standard chart types (bar, line, bubble, count plot, eCDF) plus a composable chart spec for building custom charts like heatmaps and average-line overlays. Charts can be configured to cross-filter.
+## 로컬에서 개선 화면 열기
 
-- 🧩 **Multimodal data support:**
-  Built-in viewers for text, image, audio, numeric, categorical, and time columns.
+Node.js와 npm, WebGPU를 사용할 수 있는 브라우저가 필요합니다. Wine Reviews 데모는 데이터와 사전 계산된 지도 좌표, DuckDB 확장 파일을 외부에서 받아오므로 인터넷 연결도 필요합니다.
 
-- 🤖 **AI agent access via MCP:**
-  AI agents can query the schema, run SQL, create charts, and capture screenshots via Model Context Protocol.
+저장소 루트에서 실행합니다.
 
-Please visit <https://apple.github.io/embedding-atlas> for a demo and documentation.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./packages/docs/public/assets/embedding-atlas-dark.png">
-  <img alt="screenshot of Embedding Atlas" src="./packages/docs/public/assets/embedding-atlas-light.png">
-</picture>
-
-## Get started
-
-To use Embedding Atlas with Python:
-
-```bash
-pip install embedding-atlas
-
-embedding-atlas <your-dataset>
+```sh
+git clone https://github.com/dndnjsgh/embedding-atlas-ux.git
+cd embedding-atlas-ux
+npm install
+npm run build -w @embedding-atlas/utils
+npm run dev -w @embedding-atlas/component
 ```
 
-In addition to the command line tool, Embedding Atlas is available as a Python Notebook (e.g., Jupyter) widget:
+터미널에 표시된 로컬 주소를 열고 상단 **Component → EmbeddingAtlas dashboard**를 선택하세요. 처음 선택된 `EmbeddingView`는 합성 데이터를 사용하는 별도 개발 데모입니다.
 
-```python
-from embedding_atlas.widget import EmbeddingAtlasWidget
+| 메뉴 | 확인할 내용 |
+| --- | --- |
+| EmbeddingAtlas dashboard | Wine Reviews를 사용하는 전체 대시보드와 개선 기능 |
+| EmbeddingView | 배열 데이터를 직접 전달하는 캔버스 컴포넌트 데모 |
+| EmbeddingViewMosaic | Mosaic 질의·선택 시스템과 연결된 컴포넌트 데모 |
 
-# Show the Embedding Atlas widget for your data frame:
-EmbeddingAtlasWidget(df)
+Mosaic는 이미지 타일을 뜻하지 않습니다. 데이터 질의와 여러 뷰의 선택 상태를 연결하는 기반입니다.
+
+### 실행이 막힐 때
+
+- 지도에 WebGPU 오류가 나오면 브라우저의 WebGPU·그래픽 가속 지원을 확인하세요.
+- Wine Reviews 다운로드 오류가 나오면 Hugging Face, Apple 데모 데이터, DuckDB 확장 서버에 접근 가능한지 확인하세요.
+- `density_clustering_wasm.js` 누락 오류는 WASM 빌드 산출물이 없는 경우입니다. [개발 문서](packages/docs/develop.md)의 Rust·wasm-bindgen·uv 준비 및 빌드 절차를 따르세요. 전체 빌드 스크립트는 Bash를 사용합니다.
+- 데모의 자동 라벨 생성을 꺼 두어도 프로덕션 번들러가 WASM 파일을 요구할 수 있습니다.
+
+## 검증 상태
+
+개선 코드 커밋 당시 viewer 회귀 테스트 **178개가 통과**했습니다. 이 수치는 기능 정확도나 대규모 환경의 성능 보장을 뜻하지 않습니다.
+
+```sh
+npm run test -w @embedding-atlas/viewer
+npm run check -w @embedding-atlas/viewer
 ```
 
-Finally, components from Embedding Atlas are also available in an npm package:
+최근 커밋 작업에서는 타입 검사의 최종 결과를 확인하지 못했습니다. 새 환경에서의 설치부터 실행까지의 검증, 전체 프로덕션 빌드와 브라우저 시각 검증은 별도로 필요합니다.
 
-```bash
-npm install embedding-atlas
-```
+## 원본과 라이선스
 
-```js
-import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas";
-
-// or with React:
-import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas/react";
-
-// or Svelte:
-import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas/svelte";
-```
-
-For more information, please visit <https://apple.github.io/embedding-atlas/overview.html>.
-
-## BibTeX
-
-For the Embedding Atlas tool:
-
-```bibtex
-@misc{ren2025embedding,
-  title={Embedding Atlas: Low-Friction, Interactive Embedding Visualization},
-  author={Donghao Ren and Fred Hohman and Halden Lin and Dominik Moritz},
-  year={2025},
-  eprint={2505.06386},
-  archivePrefix={arXiv},
-  primaryClass={cs.HC},
-  url={https://arxiv.org/abs/2505.06386},
-}
-```
-
-For the algorithm that automatically produces clusters and labels in the embedding view:
-
-```bibtex
-@misc{ren2025scalable,
-  title={A Scalable Approach to Clustering Embedding Projections},
-  author={Donghao Ren and Fred Hohman and Dominik Moritz},
-  year={2025},
-  eprint={2504.07285},
-  archivePrefix={arXiv},
-  primaryClass={cs.HC},
-  url={https://arxiv.org/abs/2504.07285},
-}
-```
-
-For sensemaking on UMAP's internal kNN graph:
-
-```bibtex
-@misc{chau2026dimensionality,
-  title={Dimensionality Reduction Meets Network Science: Sensemaking on UMAP's kNN Graph},
-  author={Duen Horng Chau and Donghao Ren and Fred Hohman and Dominik Moritz},
-  year={2026},
-  eprint={2607.08746},
-  archivePrefix={arXiv},
-  primaryClass={cs.HC},
-  url={https://arxiv.org/abs/2607.08746},
-}
-```
-
-## Development
-
-For development instructions, please visit <https://apple.github.io/embedding-atlas/develop.html>, or check out `packages/docs/develop.md`.
-
-## License
-
-This code is released under the [`MIT license`](LICENSE).
+원본: [apple/embedding-atlas](https://github.com/apple/embedding-atlas). 원본의 MIT 라이선스와 Apple 저작권 표시를 유지합니다. 자세한 조건은 [LICENSE](LICENSE)를 확인하세요.
