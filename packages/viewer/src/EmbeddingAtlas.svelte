@@ -8,6 +8,7 @@
   import AppIcon from "./views/AppIcon.svelte";
   import ImportExportPanel from "./views/ImportExportPanel.svelte";
   import LayoutTabs from "./views/LayoutTabs.svelte";
+  import ManualAnalysisPanel from "./views/ManualAnalysisPanel.svelte";
   import SchemaPanel from "./views/SchemaPanel.svelte";
   import SearchPanel from "./views/SearchPanel.svelte";
   import SelectionBar from "./views/SelectionBar.svelte";
@@ -164,6 +165,9 @@
           {/snippet}
           {#snippet schemaPanel()}
             <SchemaPanel />
+          {/snippet}
+          {#snippet manualAnalysisPanel()}
+            <ManualAnalysisPanel />
           {/snippet}
           {#snippet importExportPanel()}
             <ImportExportPanel />

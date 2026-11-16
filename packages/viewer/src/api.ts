@@ -159,6 +159,8 @@ export interface Cache {
 }
 
 export interface Searcher {
+  /** Explicit score semantics and optional dataset-validated relevance thresholds. */
+  scoreConfig?: import("./search/search_evidence.js").SearchScoreConfig;
   /** Perform a full text search with the given query */
   fullTextSearch?(
     query: string,

@@ -102,6 +102,9 @@ export interface ChartContext {
    * When a new point is added to this list, views will animate to reveal the new point.
    */
   highlight: Writable<RowID[] | null>;
+  embeddingHighlight: import("../stores/embedding_highlight_store.js").EmbeddingHighlightStore;
+  manualAnalysis: import("../stores/manual_analysis_store.js").ManualAnalysisStore;
+  searchResults: Readable<Map<RowID, import("../search/search.js").SearchResultItem>>;
 
   /** The current overlay. When this changes, supported views will render it as overlay. */
   overlay: Writable<Overlay | null>;

@@ -217,8 +217,9 @@ export class DataPointQuery {
     px: number,
     py: number,
     unitDistance: number,
+    radiusPixels: number = 12,
   ): Promise<DataPoint | null> {
-    let rMax = unitDistance * 12;
+    let rMax = unitDistance * Math.max(1, radiusPixels);
     let { x, y } = this.source;
 
     for (let r of [this.lastDistance, rMax]) {

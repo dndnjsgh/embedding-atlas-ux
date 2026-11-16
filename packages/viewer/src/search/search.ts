@@ -6,6 +6,7 @@ import * as SQL from "@uwdata/mosaic-sql";
 
 import type { Searcher } from "../api.js";
 import type { SearchIndex } from "./search.worker.js";
+import type { SearchMatch } from "./search_evidence.js";
 
 async function createSearchIndex(): Promise<WorkerProxy<SearchIndex>> {
   let worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
@@ -97,6 +98,7 @@ export class FullTextSearcher implements Searcher {
 }
 
 export interface SearchResultItem {
+  match?: SearchMatch;
   id: any;
   fields: Record<string, any>;
   distance?: number;
@@ -113,6 +115,7 @@ export async function querySearchResultItems(
   predicate: string | null,
   items: { id: any; distance?: number }[],
 ): Promise<SearchResultItem[]> {
+  if (items.length === 0) return [];
   let fieldExpressions: string[] = [`${SQL.column(idColumn, table)} AS id`];
 
   let fields = additionalFields ?? {};

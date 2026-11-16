@@ -10,7 +10,22 @@ export {
 
 export { defaultCategoryColors } from "./colors.js";
 
-export type { EmbeddingViewConfig } from "./embedding_view/embedding_view_config.js";
+export type {
+  EmbeddingViewConfig,
+  GuidedTourConfig,
+  HighlightConfig,
+  HighlightPoint,
+  HoverSelectionConfig,
+  MinimapConfig,
+} from "./embedding_view/embedding_view_config.js";
+export { adaptiveHoverRadius, type AdaptiveHoverRadiusOptions } from "./embedding_view/adaptive_hover.js";
+export { CameraController } from "./embedding_view/cameraController.js";
+export type {
+  CameraControllerOptions,
+  CameraTarget,
+  DatasetBounds,
+  GuidedTourStep,
+} from "./embedding_view/cameraController.js";
 export type { EmbeddingViewTheme } from "./embedding_view/theme.js";
 export type {
   CustomComponent,

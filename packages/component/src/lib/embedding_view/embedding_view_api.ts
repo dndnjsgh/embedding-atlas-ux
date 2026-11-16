@@ -82,7 +82,9 @@ export interface EmbeddingViewProps {
   /** An async function that returns a data point near the given (x, y) location.
    *  The `unitDistance` parameter is the distance of a single pixel in data domain.
    *  You can use this to determine the distance threshold for selecting a point. */
-  querySelection?: ((x: number, y: number, unitDistance: number) => Promise<DataPoint | null>) | null;
+  querySelection?:
+    | ((x: number, y: number, unitDistance: number, radiusPixels?: number) => Promise<DataPoint | null>)
+    | null;
 
   /** An async function that returns labels for a list of clusters.
    *  Each cluster is given as a list of rectangles that approximately cover the region. */

@@ -8,7 +8,10 @@ import type { Searcher } from "../api.js";
 import type { Overlay } from "../charts/chart.js";
 import { performSearch, querySearchResultItems, resolveSearcher, type SearchResultItem } from "../search/search.js";
 import type { ColumnDesc } from "../utils/database.js";
+import { enrichSearchResults } from "../search/search_evidence.js";
 import { latestAsync } from "../utils/latest_async.js";
+import * as SQL from "@uwdata/mosaic-sql";
+import { splitSearchResults } from "../search/search_result_scope.js";
 
 const SEARCH_LIMIT = 500;
 
@@ -31,6 +34,10 @@ interface SearchStoreResult {
   label: string;
   highlight: string;
   items: SearchResultItem[];
+  allIds: (string | number)[];
+  totalCount?: number;
+  field?: string;
+  predicate: string | null;
   overlay: Overlay | null;
 }
 
@@ -97,16 +104,27 @@ export class SearchStore {
 
       const search = async (query: any, mode: string): Promise<SearchStoreResult | undefined> => {
         let predicate = config.getCurrentPredicate?.() ?? null;
+        // The built-in index returns every match. Only the expensive detail
+        // records are capped; map membership must never inherit that cap.
+        const complete = mode === "raw" || (mode === "full-text" && config.searcher?.fullTextSearch == null);
+        let searchLimit = SEARCH_LIMIT;
+        if (complete && mode === "full-text") {
+          const count = await config.coordinator.query(
+            SQL.Query.from(config.table).select({ count: SQL.sql`COUNT(*)` }),
+          );
+          searchLimit = Math.max(1, Number(count.get(0).count));
+        }
         let searcherResult = await performSearch({
           searcher: searcher,
           predicate: predicate,
           query: query,
           mode: mode,
-          limit: SEARCH_LIMIT,
+          limit: searchLimit,
           onStatus: (value) => {
             this.status.set(value);
           },
         });
+        const { allIds, details } = splitSearchResults(searcherResult, SEARCH_LIMIT);
 
         let fields: Record<string, string> = Object.fromEntries(config.getColumns().map((c) => [c.name, c.name]));
 
@@ -116,7 +134,7 @@ export class SearchStore {
           config.id,
           fields,
           predicate,
-          searcherResult,
+          details,
         );
 
         let label = query.toString().trim();
@@ -140,7 +158,17 @@ export class SearchStore {
           label: label,
           highlight: highlight,
           overlay: overlay,
-          items: result,
+          items: enrichSearchResults(result, {
+            query: typeof query === "string" ? query : "",
+            mode,
+            field: config.text,
+            predicate,
+            scoreConfig: config.searcher?.scoreConfig,
+          }),
+          allIds,
+          totalCount: complete ? allIds.length : undefined,
+          field: config.text,
+          predicate,
         };
       };
 
@@ -171,7 +199,7 @@ export class SearchStore {
     );
 
     const debouncedSearch = debounce((query: any, mode: string) => {
-      this.search(query, mode);
+      if (query === get(this.query) && mode === get(this.mode)) this.search(query, mode);
     }, 500);
 
     // Start search on query / mode change
@@ -190,6 +218,8 @@ export class SearchStore {
   }
 
   clear() {
+    this.query.set(undefined);
+    this.status.set(undefined);
     this._requestSearch(undefined, "none");
   }
 }

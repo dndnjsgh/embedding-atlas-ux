@@ -29,6 +29,7 @@
 
 <script lang="ts">
   import { EmbeddingViewMosaic } from "@embedding-atlas/component/svelte";
+  import { untrack } from "svelte";
   import { cubicOut } from "svelte/easing";
 
   import Button from "../../widgets/Button.svelte";
@@ -42,6 +43,11 @@
   import type { ChartViewProps, RowID } from "../chart.js";
   import { resolveChartTheme } from "../common/theme.js";
   import { makeCategoryColumn } from "./category_column.js";
+  import { resolveHighlightKinds } from "./highlight_resolver.js";
+  import { findHighlightContext, type HighlightCoordinate } from "./highlight_context.js";
+  import { manualClusterLabels, type ManualClusterLabel } from "./manual_cluster_labels.js";
+  import { manualClusterLayers, type ManualClusterLayer } from "./manual_cluster_layers.js";
+  import type { EmbeddingHighlightState } from "../../stores/embedding_highlight_store.js";
   import type { EmbeddingSpec, EmbeddingState } from "./types.js";
   import { interpolateViewport } from "./viewport_animation.js";
 
@@ -90,6 +96,120 @@
   let tooltip = $state.raw<DataPoint | null>(null);
   let selection = $state.raw<DataPoint[] | null>(null);
   let overlayProps = $state.raw<{ nodes?: DataPoint[]; edges?: { start: DataPoint; end: DataPoint }[] } | null>(null);
+  let mapClusterLabels = $state.raw<ManualClusterLabel[]>([]);
+  let mapLabelCoordinates = $state.raw<HighlightCoordinate[]>([]);
+  let mapClusterLayers = $state.raw<ManualClusterLayer[]>([]);
+  let showMapClusterLabels = $state(true);
+  let coordinateCache: { key: string; promise: Promise<HighlightCoordinate[]> } | null = null;
+  function loadCoordinates(table: string, idColumn: string, xColumn: string, yColumn: string) {
+    const key = JSON.stringify([table, idColumn, xColumn, yColumn]);
+    if (coordinateCache?.key !== key) {
+      const promise = context.coordinator
+        .query(SQL.Query.from(table).select({ id: SQL.column(idColumn), x: SQL.column(xColumn), y: SQL.column(yColumn) }))
+        .then((rows: any) => Array.from(rows) as HighlightCoordinate[]);
+      coordinateCache = { key, promise };
+      promise.catch(() => {
+        if (coordinateCache?.promise === promise) coordinateCache = null;
+      });
+    }
+    return coordinateCache.promise;
+  }
+  let embeddingHighlightState = $state.raw<EmbeddingHighlightState>({
+    mode: "focus",
+    primaryIds: [],
+    secondaryIds: [],
+    primaryLabel: "",
+    secondaryLabel: "",
+    primaryPredicate: null,
+    secondaryPredicate: null,
+    contextRadiusPercent: 1,
+  });
+  let highlightRequest = 0;
+  let contextSummary = $state.raw<{ count: number; radius: number } | null>(null);
+  let highlightBusy = $state(false);
+  let highlightError = $state<string | null>(null);
+  let highlightActive = $derived(
+    isDefaultTable &&
+      (embeddingHighlightState.primaryLabel !== "" ||
+        embeddingHighlightState.primaryIds.length > 0 ||
+        (embeddingHighlightState.mode === "compare" && embeddingHighlightState.secondaryIds.length > 0)),
+  );
+
+  $effect.pre(() =>
+    context.embeddingHighlight.state.subscribe((value) => {
+      embeddingHighlightState = value;
+    }),
+  );
+
+  $effect.pre(() =>
+    context.manualAnalysis.showMapLabels.subscribe((value) => {
+      showMapClusterLabels = value;
+    }),
+  );
+
+  $effect.pre(() => {
+    const table = dataTable,
+      idColumn = rowId,
+      xColumn = spec.data.x,
+      yColumn = spec.data.y,
+      enabled = showMapClusterLabels;
+    if (!isDefaultTable) {
+      mapClusterLabels = [];
+      mapLabelCoordinates = [];
+      mapClusterLayers = [];
+      return;
+    }
+    let cancelled = false;
+    let request = 0;
+    const unsubscribe = context.manualAnalysis.state.subscribe(async (state) => {
+      const currentRequest = ++request;
+      if (state.clusters.length === 0) {
+        mapClusterLabels = [];
+        mapLabelCoordinates = [];
+        mapClusterLayers = [];
+        return;
+      }
+      const selectedClusters = state.clusters.filter((cluster) => state.selectedClusterIds.includes(cluster.id));
+      if (!enabled && selectedClusters.length === 0) {
+        mapClusterLabels = [];
+        mapLabelCoordinates = [];
+        mapClusterLayers = [];
+        return;
+      }
+      try {
+        const coordinates = await loadCoordinates(table, idColumn, xColumn, yColumn);
+        if (!cancelled && currentRequest === request) {
+          mapClusterLabels = enabled
+            ? manualClusterLabels(selectedClusters.length > 0 ? selectedClusters : state.clusters, coordinates)
+            : [];
+          mapLabelCoordinates = enabled ? coordinates : [];
+          mapClusterLayers = manualClusterLayers(state.clusters, state.selectedClusterIds, coordinates);
+        }
+      } catch (error) {
+        if (!cancelled && currentRequest === request) {
+          mapClusterLabels = [];
+          mapLabelCoordinates = [];
+          mapClusterLayers = [];
+        }
+        console.error("Could not place manual cluster labels", error);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  });
+
+  // Search evidence belongs to the result set that was active when a point was
+  // opened. Close an existing tooltip whenever that result set changes so an
+  // old explanation cannot be mistaken for evidence for the new query.
+  $effect.pre(() =>
+    context.searchResults.subscribe(() => {
+      if (untrack(() => tooltip) != null) tooltip = null;
+    }),
+  );
+
+  let highlightConfig = $derived(highlightActive || mapClusterLayers.some((layer) => layer.points.length > 0) ? { backgroundOpacity: 0.14 } : null);
 
   // Update the category mapping and legend.
   $effect.pre(() => {
@@ -137,44 +257,61 @@
   });
 
   $effect.pre(() => {
-    return context.overlay.subscribe(async (overlay) => {
-      if (overlay == null) {
+    const table = dataTable,
+      idColumn = rowId,
+      xColumn = spec.data.x,
+      yColumn = spec.data.y;
+    if (!isDefaultTable) {
+      overlayProps = null;
+      return;
+    }
+    // Search highlights and manual cluster labels share one coordinate load.
+    const unsubscribe = context.embeddingHighlight.state.subscribe(async (state) => {
+      const request = ++highlightRequest;
+      const primaryIds = state.primaryIds;
+      contextSummary = null;
+      highlightError = null;
+      if (primaryIds.length == 0 && !(state.mode === "compare" && state.secondaryIds.length > 0)) {
         overlayProps = null;
+        highlightBusy = false;
         return;
       }
-      // Collect all ids
-      let ids: RowID[] = [
-        ...(overlay.nodes ?? []), // all nodes
-        ...(overlay.edges?.flatMap((e) => [e.start, e.end]) ?? []), // all points in edges
-      ];
-      // Query for coordinates from ids
-      let queryResult = Array.from(
-        await context.coordinator.query(
-          SQL.Query.from(dataTable)
-            .select({ id: SQL.column(rowId), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
-            .where(
-              SQL.isIn(
-                SQL.column(rowId),
-                ids.map((x) => SQL.literal(x)),
-              ),
-            ),
-        ),
-      );
-      let mapper = new Map(queryResult.map((p) => [p.id, { identifier: p.id, x: p.x, y: p.y }]));
-      overlayProps = {
-        nodes: overlay.nodes?.map((n) => mapper.get(n)).filter((x) => x != undefined),
-        edges: overlay.edges
-          ?.map((n) => {
-            let start = mapper.get(n.start);
-            let end = mapper.get(n.end);
-            if (start == undefined || end == undefined) {
-              return undefined;
-            }
-            return { start, end };
-          })
-          .filter((x) => x != undefined),
-      };
+      highlightBusy = true;
+      overlayProps = null;
+      try {
+        const coordinates = await loadCoordinates(table, idColumn, xColumn, yColumn);
+        if (request !== highlightRequest) return;
+        const nearby =
+          state.mode === "context" ? findHighlightContext(coordinates, primaryIds, state.contextRadiusPercent) : null;
+        if (nearby) contextSummary = { count: nearby.ids.size, radius: nearby.radius };
+        const highlightKinds = resolveHighlightKinds({
+          mode: state.mode,
+          primaryIds,
+          secondaryIds: state.secondaryIds,
+          contextIds: nearby?.ids,
+        });
+        overlayProps = {
+          nodes: coordinates
+            .filter((p) => highlightKinds.has(p.id))
+            .map((p) => ({
+              identifier: p.id,
+              x: p.x,
+              y: p.y,
+              highlightKind: highlightKinds.get(p.id),
+            })),
+        };
+      } catch (error) {
+        if (request === highlightRequest)
+          highlightError = "Could not load highlight coordinates. Change mode to retry.";
+        console.error(error);
+      } finally {
+        if (request === highlightRequest) highlightBusy = false;
+      }
     });
+    return () => {
+      ++highlightRequest;
+      unsubscribe();
+    };
   });
 
   async function animateToPoint(identifier: RowID): Promise<void> {
@@ -255,12 +392,27 @@
 </script>
 
 <div class="relative bg-white dark:bg-black">
+  {#if highlightActive}
+    <div
+      class="absolute bottom-7 left-2 z-10 max-w-[65%] rounded border border-slate-300 bg-white/95 dark:bg-slate-900/95 px-2 py-1 text-xs pointer-events-none"
+      role="status"
+    >
+      {#if highlightBusy}Updating all highlight points…
+      {:else if highlightError}{highlightError}
+      {:else if contextSummary}
+        Context: all {embeddingHighlightState.primaryIds.length.toLocaleString()} matches · {contextSummary.count.toLocaleString()}
+        surrounding points<br />
+        Radius ≤ {contextSummary.radius.toPrecision(4)} coordinate units ({embeddingHighlightState.contextRadiusPercent}%
+        of dataset diagonal); independent of zoom.
+      {:else}All result points highlighted · other points at 14% opacity{/if}
+    </div>
+  {/if}
   <EmbeddingViewMosaic
     width={width}
     height={height}
     coordinator={context.coordinator}
     table={dataTable}
-    filter={filter}
+    filter={highlightActive ? null : filter}
     rangeSelection={filter}
     identifier={rowId}
     x={spec.data.x}
@@ -274,6 +426,7 @@
     config={{
       colorScheme: $colorScheme,
       ...context.embeddingViewConfig,
+      ...(highlightConfig != null ? { highlight: highlightConfig } : {}),
       mode: spec.mode ?? "points",
       ...(spec.minimumDensity != null ? { minimumDensity: spec.minimumDensity } : {}),
       ...(spec.pointSize != null ? { pointSize: spec.pointSize } : {}),
@@ -313,7 +466,13 @@
       : undefined}
     customOverlay={{
       class: CustomOverlay,
-      props: { ...(overlayProps ?? { nodes: [], edges: [] }) },
+      props: {
+        ...(overlayProps ?? { nodes: [], edges: [] }),
+        clusterLabels: mapClusterLabels,
+        clusterPointCoordinates: mapLabelCoordinates,
+        clusterLayers: mapClusterLayers,
+        darkMode: $colorScheme === "dark",
+      },
     }}
     viewportState={animatingViewport ?? chartState.viewport}
     onViewportState={(v) =>

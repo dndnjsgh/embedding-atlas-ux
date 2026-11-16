@@ -7,6 +7,7 @@
   import type { Writable } from "svelte/store";
   import {
     IconDarkMode,
+    IconAnalysisPanel,
     IconImportExportPanel,
     IconLightMode,
     IconSchemaPanel,
@@ -22,6 +23,7 @@
     searchPanel: Snippet;
     schemaPanel: Snippet;
     importExportPanel: Snippet;
+    manualAnalysisPanel: Snippet;
     settingsPanel: Snippet;
   }
 
@@ -33,6 +35,7 @@
     searchPanel,
     schemaPanel,
     importExportPanel,
+    manualAnalysisPanel,
   }: Props = $props();
 
   function togglePanel(name: string) {
@@ -52,9 +55,11 @@
         ? schemaPanel
         : $activePanel == "search"
           ? searchPanel
-          : $activePanel == "import-export"
-            ? importExportPanel
-            : undefined,
+          : $activePanel == "manual-analysis"
+            ? manualAnalysisPanel
+            : $activePanel == "import-export"
+              ? importExportPanel
+              : undefined,
   );
 </script>
 
@@ -74,6 +79,14 @@
     onClick={togglePanel("schema")}
     active={$activePanel == "schema"}
     open={$activePanel == "schema"}
+  />
+
+  <SideBarButton
+    icon={IconAnalysisPanel}
+    title="Manual analysis"
+    onClick={togglePanel("manual-analysis")}
+    active={$activePanel == "manual-analysis"}
+    open={$activePanel == "manual-analysis"}
   />
 
   <SideBarButton

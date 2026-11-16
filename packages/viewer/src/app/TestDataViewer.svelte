@@ -1,6 +1,7 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import type { Coordinator } from "@uwdata/mosaic-core";
+  import type { EmbeddingViewConfig } from "@embedding-atlas/component";
 
   import Viewer from "./Viewer.svelte";
 
@@ -12,11 +13,13 @@
 
   export class TestDataSource implements DataSource {
     private count: number;
+    private embeddingViewConfig: EmbeddingViewConfig | null;
 
     downloadSelection: ((predicate: string | null, format: ExportFormat) => Promise<void>) | undefined = undefined;
 
-    constructor(count: number) {
+    constructor(count: number, embeddingViewConfig: EmbeddingViewConfig | null = null) {
       this.count = count;
+      this.embeddingViewConfig = embeddingViewConfig;
     }
 
     async initializeCoordinator(coordinator: Coordinator, table: string): Promise<Partial<EmbeddingAtlasProps>> {
@@ -73,11 +76,25 @@
           projection: { x: "x", y: "y" },
           text: "text",
         },
+        embeddingViewConfig: this.embeddingViewConfig,
       };
     }
   }
 
-  let dataSource = new TestDataSource(100000);
+  const defaultEmbeddingViewConfig: EmbeddingViewConfig = {
+    // Keep the dashboard demo self-contained: automatic labels require the
+    // optional density-clustering WASM package to be built separately.
+    autoLabelEnabled: false,
+    guidedTour: true,
+    minimap: { maxPreviewPoints: 1800 },
+  };
+
+  interface Props {
+    embeddingViewConfig?: EmbeddingViewConfig | null;
+  }
+
+  let { embeddingViewConfig = defaultEmbeddingViewConfig }: Props = $props();
+  let dataSource = $derived(new TestDataSource(100000, embeddingViewConfig));
 </script>
 
 <Viewer dataSource={dataSource} />

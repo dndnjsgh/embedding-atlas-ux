@@ -74,7 +74,7 @@
 
   $effect(() => {
     // Let Svelte track the dependencies.
-    let deps = { coordinator: coordinator, source: { table, x, y, category } };
+    let deps = { coordinator: coordinator, source: { table, x, y, category }, filter };
 
     let client: { destroy: () => void } | null = null;
     let didDestroy = false;
@@ -94,7 +94,7 @@
       // A client is a thing that queries data from a selection with user-defined query
       client = makeClient({
         coordinator: deps.coordinator,
-        selection: filter ?? undefined,
+        selection: deps.filter ?? undefined,
         query: (predicate) => {
           return SQL.Query.from(source.table)
             .select({
@@ -327,8 +327,13 @@
     new DataPointQuery(coordinator, { table, x, y, category, text, identifier, additionalFields }),
   );
 
-  async function querySelection(px: number, py: number, unitDistance: number): Promise<DataPoint | null> {
-    return await pointQuery.queryClosestPoint(filter?.predicate?.(clientId), px, py, unitDistance);
+  async function querySelection(
+    px: number,
+    py: number,
+    unitDistance: number,
+    radiusPixels?: number,
+  ): Promise<DataPoint | null> {
+    return await pointQuery.queryClosestPoint(filter?.predicate?.(clientId), px, py, unitDistance, radiusPixels);
   }
 
   async function queryPoints(identifiers: DataPointID[]): Promise<DataPoint[]> {

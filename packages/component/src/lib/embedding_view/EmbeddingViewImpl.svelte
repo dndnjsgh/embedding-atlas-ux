@@ -19,7 +19,9 @@
     queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(LabelContent | null)[]>) | null;
     tooltip: Selection | null;
     selection: Selection[] | null;
-    querySelection: ((x: number, y: number, unitDistance: number) => Promise<Selection | null>) | null;
+    querySelection:
+      | ((x: number, y: number, unitDistance: number, radiusPixels?: number) => Promise<Selection | null>)
+      | null;
     rangeSelection: Rectangle | Point[] | null;
     defaultViewportState: ViewportState | null;
     viewportState: ViewportState | null;
@@ -105,12 +107,16 @@
   import { EmbeddingRenderer } from "../webgpu_renderer/renderer.js";
   import { requestWebGPUDevice } from "../webgpu_renderer/utils.js";
   import { customComponentAction, customComponentProps } from "./custom_component_helper.js";
+  import { adaptiveHoverRadius } from "./adaptive_hover.js";
   import type { EmbeddingViewConfig } from "./embedding_view_config.js";
   import { layoutLabels, type LabelWithPlacement } from "./labels.js";
   import { simplifyPolygon } from "./simplify_polygon.js";
   import { resolveTheme, type ThemeConfig } from "./theme.js";
   import type { Cache, CustomComponent, Label, LabelContent, OverlayProxy } from "./types.js";
   import { findClusters } from "./worker/index.js";
+  import { CameraController, type DatasetBounds, type GuidedTourStep } from "./cameraController.js";
+  import GuidedTour from "./GuidedTour.svelte";
+  import Minimap from "./Minimap.svelte";
 
   interface SelectionBase {
     x: number;
@@ -120,6 +126,63 @@
   }
 
   type Selection = $$Generic<SelectionBase>;
+
+  function datasetBounds(x: Float32Array, y: Float32Array, fallback: ViewportState): DatasetBounds {
+    let xMin = Infinity;
+    let xMax = -Infinity;
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    const count = Math.min(x.length, y.length);
+    for (let index = 0; index < count; index++) {
+      if (!Number.isFinite(x[index]) || !Number.isFinite(y[index])) continue;
+      xMin = Math.min(xMin, x[index]);
+      xMax = Math.max(xMax, x[index]);
+      yMin = Math.min(yMin, y[index]);
+      yMax = Math.max(yMax, y[index]);
+    }
+    if (!Number.isFinite(xMin) || !Number.isFinite(yMin)) {
+      const radius = 1 / Math.max(fallback.scale, 1e-6);
+      return {
+        xMin: fallback.x - radius,
+        xMax: fallback.x + radius,
+        yMin: fallback.y - radius,
+        yMax: fallback.y + radius,
+      };
+    }
+    // Keep single-coordinate datasets navigable and leave a small visual margin.
+    const xPadding = Math.max((xMax - xMin) * 0.04, 1e-6);
+    const yPadding = Math.max((yMax - yMin) * 0.04, 1e-6);
+    return { xMin: xMin - xPadding, xMax: xMax + xPadding, yMin: yMin - yPadding, yMax: yMax + yPadding };
+  }
+
+  function defaultTourSteps(bounds: DatasetBounds, overview: ViewportState): GuidedTourStep[] {
+    const xSpan = bounds.xMax - bounds.xMin;
+    const ySpan = bounds.yMax - bounds.yMin;
+    const zoom = overview.scale * 2.25;
+    return [
+      {
+        title: "Embedding landscape overview",
+        description: "Start with the overall structure of the projected dataset.",
+        x: overview.x,
+        y: overview.y,
+        zoom: overview.scale,
+      },
+      {
+        title: "Explore a local neighborhood",
+        description: "Nearby points tend to share similar embedding representations.",
+        x: bounds.xMin + xSpan * 0.35,
+        y: bounds.yMin + ySpan * 0.62,
+        zoom,
+      },
+      {
+        title: "Compare another region",
+        description: "Use the minimap to move freely between areas after the tour.",
+        x: bounds.xMin + xSpan * 0.68,
+        y: bounds.yMin + ySpan * 0.36,
+        zoom,
+      },
+    ];
+  }
 
   let {
     data = { x: new Float32Array(), y: new Float32Array(), category: null },
@@ -160,6 +223,32 @@
   let resolvedViewport = $derived(new Viewport(resolvedViewportState, width, height));
   let pointLocation = $derived(resolvedViewport.pixelLocationFunction());
   let coordinateAtPoint = $derived(resolvedViewport.coordinateAtPixelFunction());
+  let currentDatasetBounds = $derived(datasetBounds(data.x, data.y, resolvedViewportState));
+
+  let guidedTourOptions = $derived.by(() => {
+    const tour = config?.guidedTour;
+    if (tour == null || tour === false || (typeof tour === "object" && tour.enabled === false)) return null;
+    const options = typeof tour === "object" ? tour : {};
+    const steps = options.steps ?? defaultTourSteps(currentDatasetBounds, resolvedViewportState);
+    return steps.length > 0
+      ? {
+          steps,
+          duration: options.duration ?? 1200,
+          startDelay: options.startDelay ?? 350,
+        }
+      : null;
+  });
+
+  let minimapOptions = $derived.by(() => {
+    const minimap = config?.minimap;
+    if (minimap == null || minimap === false || (typeof minimap === "object" && minimap.enabled === false)) return null;
+    const options = typeof minimap === "object" ? minimap : {};
+    return {
+      width: options.width ?? 210,
+      height: options.height ?? 150,
+      maxPreviewPoints: options.maxPreviewPoints ?? 3000,
+    };
+  });
 
   let preventHover = $state(false);
 
@@ -212,6 +301,18 @@
   let canvas: HTMLCanvasElement | null = $state(null);
   let renderer: EmbeddingRenderer | null = $state(null);
   let webGPUError: string | null = $state(null);
+  let cameraController: CameraController | null = $state(null);
+  let cameraUnsubscribe: (() => void) | null = null;
+  let tourDismissed = $state(false);
+
+  $effect(() => {
+    cameraController?.update({
+      viewport: resolvedViewportState,
+      width,
+      height,
+      bounds: currentDatasetBounds,
+    });
+  });
 
   let minimumDensity = $derived(config?.minimumDensity ?? 1 / 16);
   let userPointSize = $derived(config?.pointSize ?? null);
@@ -233,6 +334,18 @@
   );
 
   let pointSize = $derived(viewingParams.pointSize);
+  let hoverRadius = $derived(
+    adaptiveHoverRadius({
+      scale: resolvedViewportState.scale,
+      maxDensity: maxDensity ?? (totalCount ?? data.x.length) / 4,
+      width,
+      height,
+      minRadius: config?.hoverSelection?.minRadius ?? undefined,
+      maxRadius: config?.hoverSelection?.maxRadius ?? undefined,
+      densityReference: config?.hoverSelection?.densityReference ?? undefined,
+    }),
+  );
+  let hoverRetentionRadius = $derived(hoverRadius * (config?.hoverSelection?.retentionMultiplier ?? 1.35));
 
   let needsUpdateLabels = true;
   let previousLabels: Label[] | null = null;
@@ -357,6 +470,13 @@
     }
     // Setup WebGPU renderer
     setupWebGPURenderer(canvas);
+    cameraController = new CameraController({
+      viewport: resolvedViewportState,
+      width,
+      height,
+      bounds: currentDatasetBounds,
+    });
+    cameraUnsubscribe = cameraController.subscribe((state) => setViewportState(state));
 
     // Override toDataURL. This is because we must submit the render commands before
     // calling toDataURL, to ensure the current image is populated with contents.
@@ -368,6 +488,9 @@
   });
 
   onDestroy(() => {
+    cameraUnsubscribe?.();
+    cameraController?.destroy();
+    cameraController = null;
     renderer?.destroy();
     renderer = null;
   });
@@ -379,6 +502,7 @@
 
   function onWheel(e: WheelEvent) {
     e.preventDefault();
+    interruptTour();
     let { x, y } = localCoordinates(e);
     let scaler = Math.exp(-e.deltaY / 200);
     onZoom(scaler, { x, y });
@@ -404,6 +528,7 @@
   }
 
   function onDrag(e1: CursorValue) {
+    interruptTour();
     setTooltip(null);
 
     let mode: "marquee" | "lasso" | "pan" = "pan";
@@ -476,6 +601,7 @@
   }
 
   async function onClick(pointer: CursorValue) {
+    interruptTour();
     if (rangeSelection != null) {
       setRangeSelection(null);
     } else {
@@ -504,12 +630,23 @@
     }
   }
 
+  function interruptTour() {
+    if (!tourDismissed) {
+      tourDismissed = true;
+      cameraController?.cancel();
+    }
+  }
+
   let onHoverThrottle = throttleTooltip(
     async (pointer: CursorValue | null) => {
       let position = pointer ? localCoordinates(pointer) : null;
+      if (tooltip != null && position != null) {
+        let currentLocation = pointLocation(tooltip.x, tooltip.y);
+        if (pointDistance(position, currentLocation) <= hoverRetentionRadius) return;
+      }
       if (selection != null && selection.length == 1) {
         let cSelection = pointLocation(selection[0].x, selection[0].y);
-        if (position != null && pointDistance(position, cSelection) < 10) {
+        if (position != null && pointDistance(position, cSelection) < hoverRetentionRadius) {
           setTooltip(selection[0]);
         }
       } else {
@@ -541,7 +678,7 @@
     }
     let { x, y } = coordinateAtPoint(position.x, position.y);
     let r = Math.abs(coordinateAtPoint(position.x + 1, position.y).x - x);
-    return await querySelection(x, y, r);
+    return await querySelection(x, y, r, hoverRadius);
   }
 
   async function generateClusters(
@@ -688,7 +825,13 @@
 </script>
 
 <div style:width="{width}px" style:height="{height}px" style:position="relative" use:onWheelWorkaround>
-  <canvas bind:this={canvas} style:position="absolute" style:top="0" style:left="0"></canvas>
+  <canvas
+    bind:this={canvas}
+    style:position="absolute"
+    style:top="0"
+    style:left="0"
+    style:opacity={config?.highlight ? Math.max(0, Math.min(1, config.highlight.backgroundOpacity ?? 0.14)) : 1}
+  ></canvas>
   <div style:width="{width}px" style:height="{height}px" style:position="absolute" style:top="0" style:left="0">
     {#if customOverlay}
       {@const action = customComponentAction(customOverlay)}
@@ -698,6 +841,26 @@
       {/key}
     {/if}
   </div>
+  {#if cameraController != null && minimapOptions != null}
+    <Minimap
+      controller={cameraController}
+      x={data.x}
+      y={data.y}
+      bounds={currentDatasetBounds}
+      width={minimapOptions.width}
+      height={minimapOptions.height}
+      maxPreviewPoints={minimapOptions.maxPreviewPoints}
+    />
+  {/if}
+  {#if cameraController != null && guidedTourOptions != null && !tourDismissed}
+    <GuidedTour
+      controller={cameraController}
+      steps={guidedTourOptions.steps}
+      defaultDuration={guidedTourOptions.duration}
+      startDelay={guidedTourOptions.startDelay}
+      onFinish={() => (tourDismissed = true)}
+    />
+  {/if}
   <svg
     width={width}
     height={height}

@@ -5,7 +5,9 @@ import { type Coordinator, makeClient, Selection } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 import { type Draft, produce } from "immer";
 import { createContext } from "svelte";
-import { get, type Readable, writable, type Writable } from "svelte/store";
+import { derived, get, type Readable, writable, type Writable } from "svelte/store";
+import { EmbeddingHighlightStore } from "./embedding_highlight_store.js";
+import { ManualAnalysisStore } from "./manual_analysis_store.js";
 
 import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "../api.js";
 import { type ChartContext, ChartContextCache, type ChartDelegate } from "../charts/chart.js";
@@ -52,6 +54,7 @@ export class EmbeddingAtlasStore {
   readonly chartTheme: Writable<ChartThemeConfig | undefined>;
 
   readonly search: SearchStore;
+  readonly manualAnalysis: ManualAnalysisStore;
   readonly history: HistoryManager<InternalState>;
 
   readonly props: EmbeddingAtlasProps;
@@ -97,6 +100,7 @@ export class EmbeddingAtlasStore {
     this.canUndo = writable(false);
     this.canRedo = writable(false);
     this.search = new SearchStore();
+    this.manualAnalysis = new ManualAnalysisStore();
 
     this.chartContext = {
       coordinator: coordinator,
@@ -127,6 +131,12 @@ export class EmbeddingAtlasStore {
         },
       },
       highlight: writable(null),
+      embeddingHighlight: new EmbeddingHighlightStore(),
+      manualAnalysis: this.manualAnalysis,
+      searchResults: derived(
+        this.search.result,
+        (result) => new Map(result?.items.map((item) => [item.id, item]) ?? []),
+      ),
       overlay: writable(null),
       textHighlight: writable(null),
       highlightScorer: writable(embeddingHighlightScorer()),
@@ -135,6 +145,11 @@ export class EmbeddingAtlasStore {
     };
 
     this.search.result.subscribe((result) => {
+      this.chartContext.embeddingHighlight.setPrimary(
+        result?.allIds ?? [],
+        result ? `${result.field ?? result.mode}: ${result.label}` : "",
+        result?.predicate ?? null,
+      );
       if (result == undefined) {
         this.chartContext.overlay.set(null);
       } else {
@@ -144,14 +159,16 @@ export class EmbeddingAtlasStore {
 
     this.chartDelegates = new Map();
 
-    if (options.onPredicateChange) {
+    {
       const onPredicateChange = options.onPredicateChange;
       let lastPredicate: string | null | undefined = undefined;
       this.crossFilter.addEventListener("value", () => {
         const predicate = this.getCurrentPredicate();
         if (predicate !== lastPredicate) {
           lastPredicate = predicate;
-          onPredicateChange(predicate);
+          onPredicateChange?.(predicate);
+          const query = get(this.search.query);
+          if (query != null && query !== "") this.search.search(query, get(this.search.mode));
         }
       });
     }

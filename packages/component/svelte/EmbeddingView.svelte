@@ -2,9 +2,11 @@
 <script>
   import { onMount } from "svelte";
 
-  import { EmbeddingView as Component } from "../dist/index.js";
+  // Keep the package's Svelte entry point usable in Vite dev mode before the
+  // distributable bundle has been generated.
+  import { EmbeddingView as Component } from "../src/lib/index.ts";
 
-  /** @type import("../dist/index.js").EmbeddingViewProps */
+  /** @type import("../src/lib/index.ts").EmbeddingViewProps */
   let props = $props();
 
   /** @type {HTMLElement} */

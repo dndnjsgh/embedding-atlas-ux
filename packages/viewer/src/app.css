@@ -4,6 +4,11 @@
 
 @config "../tailwind.config.js";
 
+/* This stylesheet is also consumed by the component-package dashboard demo.
+ * Make the Viewer sources explicit so Tailwind does not use the component
+ * package as its automatic content-detection root. */
+@source "./";
+
 @plugin '@tailwindcss/forms' {
   strategy: "class";
 }

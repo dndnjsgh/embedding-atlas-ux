@@ -49,6 +49,7 @@ export { default as IconImportExportPanel } from "~icons/fluent/database-arrow-d
 export { default as IconSearchPanel } from "~icons/fluent/search-16-filled"; // 16 feels more balanced with others
 export { default as IconSettingsPanel } from "~icons/fluent/settings-20-filled";
 export { default as IconSchemaPanel } from "~icons/fluent/textbox-settings-20-filled";
+export { default as IconAnalysisPanel } from "~icons/fluent/tag-multiple-20-filled";
 
 // Icons for light and dark mode (in sidebar)
 export { default as IconDarkMode } from "~icons/fluent/weather-moon-16-filled";

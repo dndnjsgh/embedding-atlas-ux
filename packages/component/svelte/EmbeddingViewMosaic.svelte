@@ -2,9 +2,11 @@
 <script>
   import { onMount } from "svelte";
 
-  import { EmbeddingViewMosaic as Component } from "../dist/index.js";
+  // Keep the package's Svelte entry point usable in Vite dev mode before the
+  // distributable bundle has been generated.
+  import { EmbeddingViewMosaic as Component } from "../src/lib/index.ts";
 
-  /** @type import("../dist/index.js").EmbeddingViewMosaicProps */
+  /** @type import("../src/lib/index.ts").EmbeddingViewMosaicProps */
   let props = $props();
 
   /** @type {HTMLElement} */
